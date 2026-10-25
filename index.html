@@ -6,6 +6,7 @@
 <link rel="manifest" href="manifest.webmanifest">
 <link rel="apple-touch-icon" href="icon-192.png">
 <meta name="apple-mobile-web-app-capable" content="yes">
+<script src="cores.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.js"></script>
 
 <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -291,7 +292,7 @@ const CONFIG = { url: "https://foaeyitlklnpfhavrtxc.supabase.co", key: "eyJhbGci
       user = data.user; await depoisDoLogin(); };
     el.querySelector("#ag-up").onclick = async () => { msg("Criando…");
       const { data, error } = await sb.auth.signUp({ email: el.querySelector("#ag-e").value.trim(), password: el.querySelector("#ag-p").value });
-      if (error){ msg(error.message); return; }
+      if (error){ msg(/database error|saving new user/i.test(error.message) ? "Esse e-mail ainda não está liberado. Peça para o Gabe liberar e tente de novo." : error.message); return; }
       if (data.session){ user = data.user; await depoisDoLogin(); } else msg("Conta criada. Confirme pelo link que chegou no seu e-mail e depois toque em Entrar."); };
   }
   async function depoisDoLogin(){
@@ -307,11 +308,11 @@ const CONFIG = { url: "https://foaeyitlklnpfhavrtxc.supabase.co", key: "eyJhbGci
           catch(err){ el.querySelector("#ag-msg").textContent = "Não consegui ler esse arquivo: " + (err.message || err); } };
       });
     }
-    esconder(); pronto(); rodape();
+    esconder(); if (window.Cores) await Cores.iniciar(sb, user); pronto(); rodape();
   }
   function rodape(){
     const f = document.createElement("div"); f.className = "ag-foot";
-    f.innerHTML = `<span>${user.email}</span><button id="ag-exp">Exportar dados</button><button id="ag-imp">Importar dados</button><input type="file" id="ag-impf" accept="application/json,.json" hidden><button id="ag-out">Sair</button>`;
+    f.innerHTML = `<span>${user.email}</span><button id="ag-cores">Cores</button><button id="ag-exp">Exportar dados</button><button id="ag-imp">Importar dados</button><input type="file" id="ag-impf" accept="application/json,.json" hidden><button id="ag-out">Sair</button>`;
     const fi = f.querySelector("#ag-impf"); f.querySelector("#ag-imp").onclick = () => fi.click();
     fi.onchange = async () => { let j; try { j = JSON.parse(await fi.files[0].text()); } catch(e){ alertaImp("Não consegui ler esse arquivo."); return; } fi.value = "";
       if (!j || (!j.state && !j.gastos)){ alertaImp("Esse arquivo não tem dados do app."); return; }
@@ -323,7 +324,7 @@ const CONFIG = { url: "https://foaeyitlklnpfhavrtxc.supabase.co", key: "eyJhbGci
         const { error } = await sb.from("docs").upsert(rows); if (error){ el.querySelector("#ag-msg").textContent = "Não consegui salvar: " + error.message; return; }
         location.reload(); }; };
     function alertaImp(t){ const el = tela(`<div class="ag-card"><h2>Importar dados</h2><p>${t}</p><button type="button" class="ag-btn" id="ag-no">Fechar</button></div>`); el.querySelector("#ag-no").onclick = () => { el.hidden = true; }; }
-    document.querySelector(".wrap").appendChild(f);
+    document.querySelector(".wrap").appendChild(f); f.querySelector("#ag-cores").onclick = () => window.Cores && Cores.abrir();
     f.querySelector("#ag-out").onclick = async () => { await sb.auth.signOut(); location.reload(); };
     f.querySelector("#ag-exp").onclick = async () => { const { data } = await sb.from("docs").select("id,data").eq("user_id", user.id); const o = {}; (data||[]).forEach(r => o[r.id] = r.data);
       const a = document.createElement("a"); a.href = URL.createObjectURL(new Blob([JSON.stringify(o)], { type: "application/json" })); a.download = "metas-" + new Date().toISOString().slice(0,10) + ".json"; a.click(); };
@@ -349,7 +350,7 @@ const CONFIG = { url: "https://foaeyitlklnpfhavrtxc.supabase.co", key: "eyJhbGci
 
 <div class="wrap" id="app">
   <div class="top">
-    <div class="hello"><span class="lbl">Organização do Gabe</span><h1>Metas &amp; compras</h1></div>
+    <div class="hello"><span class="lbl">Olá, <span class="nome-user"></span></span><h1>Metas &amp; compras</h1></div>
     <div class="filters"><a class="btn sm" href="../feito/" target="_blank" rel="noopener" style="text-decoration:none">Abrir o Feito ↗</a><button class="btn sm" data-act="new-goal">+ Nova meta</button></div>
   </div>
   <div id="banner"></div>
