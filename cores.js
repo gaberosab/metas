@@ -37,9 +37,22 @@
   const bloco = o => Object.entries(o).map(([k,v]) => `${k}:${v}`).join(";");
   function aplicar(){
     const L = bloco(vars(cor,false)), D = bloco(vars(cor,true));
-    const extraD = APP === "metas" ? `.pool,.hero .bar{background:rgba(255,255,255,.07)!important}` : "";
     let css = `:root{${L}}@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){${D}}}:root[data-theme="dark"]{${D}}`;
-    if (extraD) css += `@media (prefers-color-scheme:dark){:root:not([data-theme="light"]) ${extraD.replace(/,/g,",:root:not([data-theme=\"light\"]) ")}}:root[data-theme="dark"] ${extraD.replace(/,/g,',:root[data-theme="dark"] ')}`;
+    if (APP === "metas"){
+      const [h] = hsl(cor), h2 = h + 60;
+      const regras = dark => [
+        [".hero", `background:${dark ? `linear-gradient(135deg,${H(h,30,19)},${H(h2,25,21)})` : `linear-gradient(135deg,${H(h,75,90)} 0%,${H(h+30,60,92)} 55%,${H(h2,70,93)} 100%)`}`],
+        [".hero .lbl", `color:${dark ? H(h,15,72) : H(h,25,47)}`],
+        [".pool", `background:${dark ? "rgba(255,255,255,.07)" : "rgba(255,255,255,.6)"}`],
+        [".hero .bar", `background:${dark ? "rgba(255,255,255,.1)" : "rgba(255,255,255,.55)"}`],
+        ['.tabs button[aria-selected="true"]', "background:var(--text);color:var(--bg)"],
+        ['.tabs button[aria-selected="true"] .cnt', "color:var(--bg);background:rgba(127,127,127,.25)"],
+        [".tabs .cnt", `background:${H(h,40,50,.14)}`],
+        [".fab", `box-shadow:0 10px 26px ${H(h,50,50,.35)}`],
+      ];
+      const pre = (sel, r) => r.map(([a,b]) => a.split(",").map(x => sel + x).join(",") + `{${b}}`).join("");
+      css += pre(":root ", regras(false)) + `@media (prefers-color-scheme:dark){${pre(':root:not([data-theme="light"]) ', regras(true))}}` + pre(':root[data-theme="dark"] ', regras(true));
+    }
     css += `#cores-ov{position:fixed;inset:0;z-index:1100;background:rgba(0,0,0,.35);display:flex;align-items:center;justify-content:center;padding:16px}
 #cores-ov[hidden]{display:none!important}
 .cr-card{background:var(--surface);color:var(--text,var(--ink));border-radius:24px;padding:22px;max-width:380px;width:100%;display:grid;gap:12px;font-family:Nunito,system-ui,sans-serif;box-shadow:0 10px 40px rgba(0,0,0,.2)}
