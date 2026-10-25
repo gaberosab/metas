@@ -311,7 +311,18 @@ const CONFIG = { url: "https://foaeyitlklnpfhavrtxc.supabase.co", key: "eyJhbGci
   }
   function rodape(){
     const f = document.createElement("div"); f.className = "ag-foot";
-    f.innerHTML = `<span>${user.email}</span><button id="ag-exp">Exportar dados</button><button id="ag-out">Sair</button>`;
+    f.innerHTML = `<span>${user.email}</span><button id="ag-exp">Exportar dados</button><button id="ag-imp">Importar dados</button><input type="file" id="ag-impf" accept="application/json,.json" hidden><button id="ag-out">Sair</button>`;
+    const fi = f.querySelector("#ag-impf"); f.querySelector("#ag-imp").onclick = () => fi.click();
+    fi.onchange = async () => { let j; try { j = JSON.parse(await fi.files[0].text()); } catch(e){ alertaImp("Não consegui ler esse arquivo."); return; } fi.value = "";
+      if (!j || (!j.state && !j.gastos)){ alertaImp("Esse arquivo não tem dados do app."); return; }
+      const el = tela(`<div class="ag-card"><h2>Trocar os dados?</h2><p>Os dados de agora serão substituídos pelos do arquivo${j.state ? " (" + (j.state.goals||[]).length + " metas)" : ""}. Se quiser guardar os atuais, cancele e use "Exportar dados" antes.</p>
+        <button type="button" class="ag-btn" id="ag-ok">Trocar os dados</button><button type="button" class="ag-link" id="ag-no">Cancelar</button><p id="ag-msg" class="ag-msg"></p></div>`);
+      el.querySelector("#ag-no").onclick = () => { el.hidden = true; };
+      el.querySelector("#ag-ok").onclick = async () => { el.querySelector("#ag-msg").textContent = "Salvando…";
+        const rows = []; if (j.state) rows.push({ user_id: user.id, id: "state", data: j.state, updated_at: new Date().toISOString() }); if (j.gastos) rows.push({ user_id: user.id, id: "gastos", data: j.gastos, updated_at: new Date().toISOString() });
+        const { error } = await sb.from("docs").upsert(rows); if (error){ el.querySelector("#ag-msg").textContent = "Não consegui salvar: " + error.message; return; }
+        location.reload(); }; };
+    function alertaImp(t){ const el = tela(`<div class="ag-card"><h2>Importar dados</h2><p>${t}</p><button type="button" class="ag-btn" id="ag-no">Fechar</button></div>`); el.querySelector("#ag-no").onclick = () => { el.hidden = true; }; }
     document.querySelector(".wrap").appendChild(f);
     f.querySelector("#ag-out").onclick = async () => { await sb.auth.signOut(); location.reload(); };
     f.querySelector("#ag-exp").onclick = async () => { const { data } = await sb.from("docs").select("id,data").eq("user_id", user.id); const o = {}; (data||[]).forEach(r => o[r.id] = r.data);
@@ -798,7 +809,7 @@ function planHTML(saldo){
 }
 
 /* ---------- investimentos ---------- */
-const INV_DEF={inicial:0,mensal:300,idade:20,ate:50,taxa:10,inflacao:4.5,meta:1000000,real:false};
+const INV_DEF={inicial:0,mensal:300,idade:20,ate:50,taxa:10,inflacao:4.5,meta:1000000,real:false,ipca:8.4};
 const invCfg=()=>Object.assign({},INV_DEF,state.invest||{});
 function fv(P,C,ratePct,months){ const r=Math.pow(1+ratePct/100,1/12)-1; const f=Math.pow(1+r,months); return r===0?P+C*months:P*f+C*(f-1)/r; }
 function needMonthly(T,P,ratePct,months){ if(months<=0) return Infinity; const r=Math.pow(1+ratePct/100,1/12)-1; const f=Math.pow(1+r,months); const v=r===0?(T-P)/months:(T-P*f)*r/(f-1); return Math.max(0,v); }
@@ -806,8 +817,15 @@ const stepsOf=c=>(Array.isArray(c.steps)?c.steps:[]).filter(x=>x&&isFinite(+x.id
 function aporteAt(c,m){ const age=c.idade+(m-1)/12; let v=c.mensal; stepsOf(c).forEach(st=>{ if(age>=st.idade) v=st.mensal; }); return v; }
 function simPath(c,months){ const r=Math.pow(1+c.taxa/100,1/12)-1; const tot=[c.inicial], bolso=[c.inicial]; let bal=c.inicial, b=c.inicial;
   for(let m=1;m<=months;m++){ const a=aporteAt(c,m); bal=bal*(1+r)+a; b+=a; tot.push(bal); bolso.push(b); } return {tot,bolso,r}; }
+const irPct=d=>d<=180?.225:d<=360?.2:d<=720?.175:.15;
+// saldo líquido de IR: cada aporte é um lote com o próprio prazo; fee = taxa de custódia anual; isentoAte = parte sem custódia
+function simLiq(c,months,nomPct,fee,taxed,isentoAte){ const r=Math.pow(1+nomPct/100,1/12)-1; const lots=[]; if(c.inicial>0) lots.push({v:c.inicial,c:c.inicial,m:0});
+  for(let m=1;m<=months;m++){ const a=aporteAt(c,m); if(a>0) lots.push({v:a,c:a,m:m-1}); let tot=0; lots.forEach(l=>{l.v*=1+r; tot+=l.v;});
+    if(fee&&tot>isentoAte){ const k=(tot-isentoAte)*fee/12/tot; lots.forEach(l=>{l.v-=l.v*k;}); } }
+  let bruto=0,ir=0,custo=0; lots.forEach(l=>{ bruto+=l.v; custo+=l.c; if(taxed) ir+=Math.max(0,l.v-l.c)*irPct((months-l.m)*30); });
+  return {bruto,ir,liq:bruto-ir,custo}; }
 const realRate=c=>c.real?c.taxa:((1+c.taxa/100)/(1+c.inflacao/100)-1)*100;
-const CTRL=[['inicial','Já tenho investido',0,200000,500,'R$'],['mensal','Vou investir por mês',0,5000,50,'R$'],['idade','Minha idade hoje',14,70,1,'anos'],['ate','Até a idade de',18,80,1,'anos'],['taxa','Rendimento ao ano',1,20,0.5,'%'],['inflacao','Inflação ao ano',0,12,0.5,'%']];
+const CTRL=[['inicial','Já tenho investido',0,200000,500,'R$'],['mensal','Vou investir por mês',0,5000,50,'R$'],['idade','Minha idade hoje',14,70,1,'anos'],['ate','Até a idade de',18,80,1,'anos'],['taxa','Rendimento ao ano (CDI/Selic)',1,20,0.5,'%'],['inflacao','Inflação ao ano',0,12,0.5,'%'],['ipca','Tesouro IPCA+ paga acima da inflação',0,12,0.1,'%']];
 function renderInvest(){
   const c=invCfg(); const invGoal=ofKind('compra').find(g=>/invest/i.test(g.name));
   $('#goals').innerHTML=`
@@ -824,6 +842,7 @@ function renderInvest(){
       <button type="button" class="btn sm" data-act="step-add" style="justify-self:start">+ Adicionar mudança de aporte</button></div></div>
      <div class="field"><label for="iv-meta">Quero chegar a (R$)</label><input id="iv-meta" data-inv="meta" inputmode="decimal" value="${String(c.meta).replace('.',',')}"></div></div>
    </section>
+   <section class="section" id="inv-cmp"></section>
    <section class="section" id="inv-chart"></section>
    <section class="section" id="inv-table"></section>
    <section class="section" id="inv-tip"></section>
@@ -849,6 +868,19 @@ function updateInvest(){
      ${viradaMes!==null?(viradaMes===0?` Desde o começo, o rendimento de um mês já é maior que o seu aporte de ${brl(aporteAt(c,1))}.`:` Aos <b>${(c.idade+viradaMes/12).toFixed(0)} anos</b> o rendimento de um mês passa a ser maior que os ${brl(aporteAt(c,viradaMes+1))} que você coloca por mês: o dinheiro trabalha mais que você.`):''}</div>`:'';
   $('#inv-hero').innerHTML=`<div class="stat"><span class="lbl">Aos ${c.ate} anos você teria</span><span class="big">${brl0(F)}</span></div>
     <div class="stats"><div class="stat"><span class="lbl">Você colocou</span><b>${brl0(aport)}</b></div><div class="stat"><span class="lbl">Rendimento</span><b class="pos">+${brl0(juros)}</b></div><div class="stat"><span class="lbl">${c.real?'Já em dinheiro de hoje':'Em dinheiro de hoje'}</span><b>≈ ${brl0(hoje)}</b></div></div>`;
+  // comparação: Selic/CDB × IPCA+ × poupança, já sem IR
+  if(anos){ const nomI=((1+c.inflacao/100)*(1+c.ipca/100)-1)*100, def=Math.pow(1+c.inflacao/100,anos);
+    const op=[{k:'Tesouro Selic / CDB 100% CDI',d:`${String(c.taxa).replace('.',',')}% ao ano`,r:simLiq(c,n,c.taxa,.002,true,10000)},
+      {k:'Tesouro IPCA+',d:`inflação + ${String(c.ipca).replace('.',',')}% ao ano`,r:simLiq(c,n,nomI,.002,true,0)},
+      {k:'Poupança',d:'0,5% ao mês + TR, sem IR',r:simLiq(c,n,(Math.pow(1.006,12)-1)*100,0,false,0)}];
+    const best=op.reduce((a,b)=>b.r.liq>a.r.liq?b:a);
+    $('#inv-cmp').innerHTML=`<div class="sechead"><h2>Onde investir</h2><span class="muted" style="font-size:.8rem">aos ${c.ate} anos, já sem imposto</span></div>
+     <div class="tscroll"><table class="table" style="font-size:.86rem"><thead><tr><td class="lbl">Onde</td><td class="lbl r">Você teria</td><td class="lbl r">Em dinheiro de hoje</td></tr></thead><tbody>
+     ${op.map(o=>`<tr${o===best?' style="background:var(--surface-2)"':''}><td><b>${o.k}</b>${o===best?' <span class="pill h-curto">rende mais</span>':''}<br><small class="muted">${o.d}</small></td><td class="r money">${brl0(o.r.liq)}</td><td class="r num">≈ ${brl0(o.r.liq/def)}</td></tr>`).join('')}
+     </tbody></table></div>
+     <div class="gnote" style="margin-top:0"><b>Tesouro IPCA+:</b> garante ganho acima da inflação, mas a conta vale se você ficar até o vencimento. Escolha um vencimento perto de quando vai usar o dinheiro; vender antes pode dar mais ou menos, porque o preço muda todo dia. Para reserva de emergência, use Tesouro Selic ou CDB com liquidez diária. A taxa de hoje pode não se repetir nas próximas compras, então em prazos longos a conta tende a ser otimista.</div>
+     <span class="muted" style="font-size:.8rem">Imposto de Renda de 22,5% a 15% conforme o prazo de cada aporte. Taxa de custódia de 0,2% ao ano no Tesouro (no Selic, isenta até R$ 10 mil). Confira a taxa do IPCA+ do dia no app do banco: em outubro de 2026 o IPCA+ 2032 pagava cerca de 8,3% a 8,6% acima da inflação.</span>`;
+  } else $('#inv-cmp').innerHTML='';
   // gráfico
   const W=440,H=220,L=50,B=24,T=14; const pts=[],cps=[]; for(let y=0;y<=anos;y++){ pts.push(S.tot[y*12]); cps.push(S.bolso[y*12]); }
   const max=Math.max(...pts,1), X=i=>L+(W-L-8)*(anos?i/anos:0), Y=v=>T+(H-T-B)*(1-v/max);
