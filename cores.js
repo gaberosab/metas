@@ -69,7 +69,8 @@
     let st = document.getElementById("cores-css"); if (!st){ st = document.createElement("style"); st.id = "cores-css"; }
     st.textContent = css; (document.head || document.documentElement).appendChild(st);
     if (APP === "metas"){ const t = ls.get(TEMA_K) || "auto", r = document.documentElement;
-      if (t === "claro") r.setAttribute("data-theme","light"); else if (t === "escuro") r.setAttribute("data-theme","dark"); else r.removeAttribute("data-theme"); }
+      if (t === "claro") r.setAttribute("data-theme","light"); else if (t === "escuro") r.setAttribute("data-theme","dark"); else r.removeAttribute("data-theme");
+      if (window.__pintaTema) window.__pintaTema(); }
   }
   function nomeVisivel(n){ window.__nome = n || ""; document.documentElement.style.setProperty("--nome", JSON.stringify(n || ""));
     if (APP === "metas") document.title = n ? "Metas de " + n : "Metas"; }
@@ -105,6 +106,21 @@
       const d = { cor }; if (n) d.nome = n; if (APP === "metas") d.tema_metas = ls.get(TEMA_K) || "auto"; await salvarMeta(d); };
     el.onclick = e => { if (e.target === el) el.querySelector("#cr-ok").click(); };
   }
+  const SOL = '<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><circle cx="12" cy="12" r="4"/><path d="M12 2.5v2M12 19.5v2M4.6 4.6l1.4 1.4M18 18l1.4 1.4M2.5 12h2M19.5 12h2M4.6 19.4L6 18M18 6l1.4-1.4"/></svg>';
+  const LUA = '<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 14.5A8.5 8.5 0 019.5 4a8.5 8.5 0 1010.5 10.5z"/></svg>';
+  const escuroAgora = () => { const r = document.documentElement.getAttribute("data-theme"); return r ? r === "dark" : matchMedia("(prefers-color-scheme: dark)").matches; };
+  function botaoTema(){
+    if (APP !== "metas" || document.getElementById("cr-tema")) return;
+    const alvo = document.querySelector(".top .filters"); if (!alvo) return;
+    const b = document.createElement("button"); b.className = "btn sm"; b.id = "cr-tema"; b.type = "button";
+    b.style.cssText = "display:inline-flex;align-items:center;justify-content:center;padding-inline:10px";
+    const pinta = () => { const d = escuroAgora(); b.innerHTML = d ? SOL : LUA; b.title = b.ariaLabel = d ? "Mudar para modo claro" : "Mudar para modo escuro"; };
+    b.onclick = () => { const t = escuroAgora() ? "claro" : "escuro"; ls.set(TEMA_K, t); aplicar(); pinta(); salvarMeta({ tema_metas: t }); };
+    alvo.prepend(b); pinta();
+    matchMedia("(prefers-color-scheme: dark)").addEventListener("change", pinta);
+    window.__pintaTema = pinta;
+  }
+  if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", botaoTema); else botaoTema();
   aplicar();
   window.Cores = { iniciar, abrir };
 })();
